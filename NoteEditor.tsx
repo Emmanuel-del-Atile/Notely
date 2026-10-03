@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: spacing.xxl,
   },
-  disabledButton:{
+  Button:{
     opacity: 0.5
   },
 
@@ -257,4 +257,7 @@ const styles = StyleSheet.create({
     color: colors.secondaryText,
     fontWeight: typography.semibold,
   },
+  disabledButton: {
+  opacity: 0.5,
+},
 });

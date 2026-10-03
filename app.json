@@ -30,6 +30,9 @@
         "projectId": "3fc00eb7-3bc6-4131-9ed3-c3d05acb1741"
       }
     },
-    "owner": "kweku_e"
+    "owner": "kweku_e",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 
 import { useState } from "react";
@@ -23,31 +24,65 @@ export default function Login({ navigation }: any) {
   const [password, setPassword] = useState("");
 
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  async function handleLogin() {
-    setError("");
+async function handleLogin() {
+  if (isLoading) {
+    return;
+  }
 
-    if (!email.trim()) {
-      setError("Please enter your email.");
-      return;
-    }
+  setError("");
 
-    if (!password) {
-      setError("Please enter your password.");
-      return;
-    }
+  if (!email.trim()) {
+    setError("Please enter your email.");
+    return;
+  }
 
-    const user = await loginUser(
+  if (!password) {
+    setError("Please enter your password.");
+    return;
+  }
+
+  try {
+    setIsLoading(true);
+
+    await loginUser(
       email.trim(),
       password
     );
 
-    if (!user) {
-      setError(
-        "Unable to sign in. Please check your email and password."
-      );
+  } catch (error: any) {
+    console.log("Login screen error:", error);
+
+    switch (error?.code) {
+      case "auth/invalid-credential":
+        setError(
+          "Incorrect email or password."
+        );
+        break;
+
+      case "auth/network-request-failed":
+        setError(
+          "No internet connection. Please check your connection and try again."
+        );
+        break;
+
+      case "auth/too-many-requests":
+        setError(
+          "Too many attempts. Please wait and try again later."
+        );
+        break;
+
+      default:
+        setError(
+          "Something went wrong. Please try again."
+        );
     }
+
+  } finally {
+    setIsLoading(false);
   }
+}
 
   return (
     <KeyboardAvoidingView
@@ -135,14 +170,21 @@ export default function Login({ navigation }: any) {
             </View>
           )}
 
-          {/* Login */}
           <Pressable
-            style={styles.primaryButton}
+            style={[
+              styles.primaryButton,
+              isLoading && styles.disabledButton,
+            ]}
             onPress={handleLogin}
+            disabled={isLoading}
           >
-            <Text style={styles.primaryButtonText}>
-              Sign In
-            </Text>
+            {isLoading ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                Sign In
+              </Text>
+            )}
           </Pressable>
 
           {/* Forgot */}
@@ -287,6 +329,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: spacing.sm,
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 
   primaryButtonText: {

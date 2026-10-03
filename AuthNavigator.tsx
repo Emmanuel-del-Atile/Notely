@@ -17,6 +17,7 @@ const Stack =
 export default function AuthNavigator() {
   return (
     <Stack.Navigator
+     id ="AuthStack"
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.background,

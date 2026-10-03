@@ -120,7 +120,7 @@ const buttonSize =
 
             // Replace the two numbers
             // with the result
-            numbers.splice(i, 2, result);
+            numbers.splice(i, 2, result.toString());
 
             // Remove the handled operator
             operators.splice(i, 1);
@@ -154,7 +154,7 @@ const buttonSize =
                 Number(numbers[i + 1]);
         }
 
-        numbers.splice(i, 2, result);
+        numbers.splice(i, 2, result.toString());
         operators.splice(i, 1);
     }
 
@@ -447,7 +447,7 @@ const [display, setDisplay] = useState("");
 
 }
 
-function Monitor({display}){
+function Monitor({display}:{display:string | number}) {
 
   const {width, height} = useWindowDimensions();
   const isLandscape = width > height;

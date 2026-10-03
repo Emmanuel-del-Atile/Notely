@@ -11,8 +11,15 @@ import {
 
 import {
   getMyNotes,
+  getCachedNotes,
   deleteNote,
+  togglePin,
+  toggleFavorite,
+  updateNoteColor,
 } from "./services/notes";
+import NoteColorPicker from "./components/NoteColorPicker";
+
+import { Ionicons } from "@expo/vector-icons";
 
 import { useFocusEffect } from "@react-navigation/native";
 import { useState, useCallback } from "react";
@@ -21,13 +28,19 @@ import type { Note } from "./types/note";
 import { formatDate } from "./utils/date";
 import { searchNotes } from "./utils/noteHelper";
 
-import {
-  colors,
-  typography,
-  spacing,
-} from "./theme";
+import { colors, typography, spacing } from "./theme";
+
+import NoteActionMenu from "./components/NoteActionMenu";
 
 type ScreenStatus = "idle" | "loading" | "success" | "error";
+
+const noteColors = {
+  default: colors.surface,
+  yellow: "#FFF3A3",
+  blue: "#BDE0FE",
+  green: "#C7F9CC",
+  pink: "#FFC8DD",
+};
 
 export default function Home({ navigation }: any) {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -37,20 +50,31 @@ export default function Home({ navigation }: any) {
   const [status, setStatus] = useState<ScreenStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Note currently being managed
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
       loadNotes();
-    }, [])
+    }, []),
   );
 
   const sortedNotes = [...notes].sort((a, b) => {
+    // Pinned notes come first
+    if (a.isPinned !== b.isPinned) {
+      return a.isPinned ? -1 : 1;
+    }
+
+    // Within the same group, newest comes first
     const dateA = a.createdAt?.getTime() ?? 0;
     const dateB = b.createdAt?.getTime() ?? 0;
 
     return dateB - dateA;
   });
-  
+
   const filteredNotes = searchNotes(notes, searchText);
+
   const displayedNotes =
     searchText.trim() === ""
       ? showAll
@@ -59,6 +83,20 @@ export default function Home({ navigation }: any) {
       : filteredNotes;
 
   async function loadNotes() {
+    const cachedNotes = getCachedNotes();
+
+    // Show cached data immediately
+    if (cachedNotes) {
+      setNotes(cachedNotes);
+      setStatus("success");
+
+      // Refresh in the background
+      refreshNotesInBackground();
+
+      return;
+    }
+
+    // No cache → normal first load
     setStatus("loading");
     setErrorMessage(null);
 
@@ -68,10 +106,32 @@ export default function Home({ navigation }: any) {
       setNotes(data);
       setStatus("success");
     } catch (error) {
-      console.error("Failed to load notes:", error);
+      console.error(
+        "Failed to load notes:",
+        error
+      );
 
-      setErrorMessage("Failed to load notes. Please try again.");
+      setErrorMessage(
+        "Failed to load notes. Please try again."
+      );
+
       setStatus("error");
+    }
+  }
+
+  async function refreshNotesInBackground() {
+    try {
+      const freshNotes = await getMyNotes(true);
+
+      setNotes(freshNotes);
+    } catch (error) {
+      console.error(
+        "Background refresh failed:",
+        error
+      );
+
+      // Don't change the UI to an error state.
+      // The cached data is still usable.
     }
   }
 
@@ -79,23 +139,107 @@ export default function Home({ navigation }: any) {
     setShowAll((current) => !current);
   }
 
-  async function handleDelete(noteId: string) {
-    const success = await deleteNote(noteId);
+  async function handleTogglePin(note: Note) {
+    try {
+      await togglePin(note.id, note.isPinned);
 
-    if (success) {
       setNotes((currentNotes) =>
-        currentNotes.filter(
-          (note) => note.id !== noteId
-        )
+        currentNotes.map((item) =>
+          item.id === note.id
+            ? {
+                ...item,
+                isPinned: !item.isPinned,
+              }
+            : item,
+        ),
       );
+
+      setSelectedNote(null);
+    } catch (error) {
+      console.error("Failed to toggle pin:", error);
+
+      Alert.alert("Error", "Failed to update the note. Please try again.");
     }
   }
 
-const confirmDeleteNote = (note: Note) => {
-  Alert.alert(
-    "Delete Note",
-    "Are you sure you want to delete this note?",
-    [
+  async function handleToggleFavorite(note: Note) {
+    try {
+      await toggleFavorite(note.id, note.isFavorite);
+
+      setNotes((currentNotes) =>
+        currentNotes.map((item) =>
+          item.id === note.id
+            ? {
+                ...item,
+                isFavorite: !item.isFavorite,
+              }
+            : item,
+        ),
+      );
+
+      setSelectedNote(null);
+    } catch (error) {
+      console.error("Failed to toggle favorite:", error);
+
+      Alert.alert("Error", "Failed to update the note. Please try again.");
+    }
+  }
+
+  function handleEdit(note: Note) {
+    setSelectedNote(null);
+
+    navigation.navigate("NoteEditor", {
+      note,
+    });
+  }
+
+  function handleChangeColor() {
+    setColorPickerVisible(true);
+  }
+
+  async function handleSelectColor(color: Note["color"]) {
+  if (!selectedNote) return;
+
+  try {
+    await updateNoteColor(
+      selectedNote.id,
+      color
+    );
+
+    setNotes((currentNotes) =>
+      currentNotes.map((item) =>
+        item.id === selectedNote.id
+          ? {
+              ...item,
+              color,
+            }
+          : item
+      )
+    );
+
+    setSelectedNote(null);
+    setColorPickerVisible(false);
+  } catch (error) {
+    console.error(
+      "Failed to update note color:",
+      error
+    );
+
+    Alert.alert(
+      "Error",
+      "Failed to change note color. Please try again."
+    );
+  }
+}
+
+
+  function handleMenuDelete(note: Note) {
+    setSelectedNote(null);
+    confirmDeleteNote(note);
+  }
+
+  function confirmDeleteNote(note: Note) {
+    Alert.alert("Delete Note", "Are you sure you want to delete this note?", [
       {
         text: "Cancel",
         style: "cancel",
@@ -105,28 +249,32 @@ const confirmDeleteNote = (note: Note) => {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteNote(note.id);
+            const success = await deleteNote(note.id);
 
-            // Update the UI immediately
+            if (!success) {
+              Alert.alert("Error", "Failed to delete note.");
+              return;
+            }
+
+            // Update UI immediately
             setNotes((currentNotes) =>
-              currentNotes.filter((item) => item.id !== note.id)
+              currentNotes.filter((item) => item.id !== note.id),
             );
           } catch (error) {
+            console.error("Failed to delete note:", error);
+
             Alert.alert("Error", "Failed to delete note.");
           }
         },
       },
-    ]
-  );
-};
+    ]);
+  }
 
   if (status === "loading") {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.statusContainer}>
-          <Text style={styles.statusText}>
-            Loading notes...
-          </Text>
+          <Text style={styles.statusText}>Loading notes...</Text>
         </View>
       </SafeAreaView>
     );
@@ -136,17 +284,10 @@ const confirmDeleteNote = (note: Note) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.statusContainer}>
-          <Text style={styles.statusText}>
-            {errorMessage}
-          </Text>
+          <Text style={styles.statusText}>{errorMessage}</Text>
 
-          <Pressable
-            style={styles.retryButton}
-            onPress={loadNotes}
-          >
-            <Text style={styles.retryButtonText}>
-              Try Again
-            </Text>
+          <Pressable style={styles.retryButton} onPress={loadNotes}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -155,7 +296,6 @@ const confirmDeleteNote = (note: Note) => {
 
   return (
     <SafeAreaView style={styles.container}>
-
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -168,22 +308,35 @@ const confirmDeleteNote = (note: Note) => {
           </Text>
         </View>
 
-        <View style={styles.countBadge}>
-          <Text style={styles.countNumber}>
-            {notes.length}
-          </Text>
+        <View style={styles.headerActions}>
+          <Pressable
+            style={styles.favoriteButton}
+            onPress={() =>
+              navigation.navigate("Favorites")
+            }
+          >
+            <Ionicons
+              name="star-outline"
+              size={24}
+              color={colors.primary}
+            />
+          </Pressable>
 
-          <Text style={styles.countLabel}>
-            notes
-          </Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.countNumber}>
+              {notes.length}
+            </Text>
+
+            <Text style={styles.countLabel}>
+              notes
+            </Text>
+          </View>
         </View>
       </View>
 
       {/* Search */}
       <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>
-          ⌕
-        </Text>
+        <Text style={styles.searchIcon}>⌕</Text>
 
         <TextInput
           style={styles.searchInput}
@@ -197,23 +350,16 @@ const confirmDeleteNote = (note: Note) => {
       {/* Section header */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
-          {searchText.trim()
-            ? "Search results"
-            : "Recent notes"}
+          {searchText.trim() ? "Search results" : "Recent notes"}
         </Text>
 
-        {notes.length > 5 &&
-          searchText.trim() === "" && (
-            <Pressable
-              onPress={handleShowAll}
-            >
-              <Text style={styles.showText}>
-                {showAll
-                  ? "Show Less"
-                  : "Show All"}
-              </Text>
-            </Pressable>
-          )}
+        {notes.length > 5 && searchText.trim() === "" && (
+          <Pressable onPress={handleShowAll}>
+            <Text style={styles.showText}>
+              {showAll ? "Show Less" : "Show All"}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView
@@ -223,29 +369,20 @@ const confirmDeleteNote = (note: Note) => {
         {notes.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon}>
-              <Text style={styles.emptyIconText}>
-                N
-              </Text>
+              <Text style={styles.emptyIconText}>N</Text>
             </View>
 
-            <Text style={styles.emptyTitle}>
-              Nothing here yet
-            </Text>
+            <Text style={styles.emptyTitle}>Nothing here yet</Text>
 
             <Text style={styles.emptyMessage}>
-              Capture your first thought, idea or
-              reminder with Notely.
+              Capture your first thought, idea or reminder with Notely.
             </Text>
           </View>
         ) : displayedNotes.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.searchEmptyIcon}>
-              ⌕
-            </Text>
+            <Text style={styles.searchEmptyIcon}>⌕</Text>
 
-            <Text style={styles.emptyTitle}>
-              No notes found
-            </Text>
+            <Text style={styles.emptyTitle}>No notes found</Text>
 
             <Text style={styles.emptyMessage}>
               Try searching for a different word.
@@ -253,34 +390,33 @@ const confirmDeleteNote = (note: Note) => {
           </View>
         ) : (
           displayedNotes.map((note) => (
-            <View
-              key={note.id}
-              style={styles.noteCard}
-            >
+            <View 
+            key={note.id} 
+            style={[styles.noteCard, { backgroundColor: noteColors[note.color] }]}>
               <Pressable
                 style={styles.noteContent}
-                onPress={() =>
-                  navigation.navigate(
-                    "NoteEditor",
-                    { note }
-                  )
-                }
+                onPress={() => navigation.navigate("NoteDetails", { note })}
+                onLongPress={() => setSelectedNote(note)}
+                delayLongPress={400}
               >
                 <View style={styles.noteTop}>
                   <View style={styles.noteDot} />
 
-                  <Text
-                    style={styles.noteTitle}
-                    numberOfLines={1}
-                  >
+                  <Text style={styles.noteTitle} numberOfLines={1}>
                     {note.title}
                   </Text>
+
+                  {note.isPinned && (
+                    <Ionicons
+                      name="pin"
+                      size={18}
+                      color={colors.primary}
+                      style={styles.pinIcon}
+                    />
+                  )}
                 </View>
 
-                <Text
-                  style={styles.notePreview}
-                  numberOfLines={2}
-                >
+                <Text style={styles.notePreview} numberOfLines={2}>
                   {note.content}
                 </Text>
 
@@ -288,17 +424,6 @@ const confirmDeleteNote = (note: Note) => {
                   {note.updatedAt
                     ? `Updated ${formatDate(note.updatedAt)}`
                     : `Created ${formatDate(note.createdAt)}`}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.deleteButton}
-                onPress={() =>
-                  confirmDeleteNote(note)
-                }
-              >
-                <Text style={styles.deleteText}>
-                  Delete
                 </Text>
               </Pressable>
             </View>
@@ -309,15 +434,44 @@ const confirmDeleteNote = (note: Note) => {
       {/* Floating Action Button */}
       <Pressable
         style={styles.createButton}
-        onPress={() =>
-          navigation.navigate("NoteEditor")
-        }
+        onPress={() => navigation.navigate("NoteEditor")}
       >
-        <Text style={styles.createIcon}>
-          +
-        </Text>
+        <Text style={styles.createIcon}>+</Text>
       </Pressable>
 
+      {/* Note Action Menu */}
+  {selectedNote && (
+    <NoteActionMenu
+      note={selectedNote}
+      onPin={() =>
+        handleTogglePin(selectedNote)
+      }
+      onFavorite={() =>
+        handleToggleFavorite(selectedNote)
+      }
+      onColor={handleChangeColor}
+      onEdit={() =>
+        handleEdit(selectedNote)
+      }
+      onDelete={() =>
+        handleMenuDelete(selectedNote)
+      }
+      onClose={() =>
+        setSelectedNote(null)
+      }
+    />
+  )}
+
+  {colorPickerVisible && selectedNote && (
+    <NoteColorPicker
+      currentColor={selectedNote.color}
+      onSelect={handleSelectColor}
+      onClose={() => {
+        setColorPickerVisible(false);
+        setSelectedNote(null);
+      }}
+    />
+  )}
     </SafeAreaView>
   );
 }
@@ -488,18 +642,6 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
   },
 
-  deleteButton: {
-    alignSelf: "flex-end",
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
-
-  deleteText: {
-    color: colors.danger,
-    fontSize: typography.caption,
-    fontWeight: typography.semibold,
-  },
-
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -556,10 +698,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
 
     elevation: 6,
+
     shadowOffset: {
       width: 0,
       height: 4,
     },
+
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
@@ -570,4 +714,22 @@ const styles = StyleSheet.create({
     fontWeight: typography.regular,
     marginTop: -3,
   },
+
+  pinIcon: {
+    marginLeft: spacing.sm,
+  },
+  headerActions: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: spacing.sm,
+},
+
+favoriteButton: {
+  width: 42,
+  height: 42,
+  borderRadius: 21,
+  backgroundColor: colors.primaryLight,
+  justifyContent: "center",
+  alignItems: "center",
+},
 });

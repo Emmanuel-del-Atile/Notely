@@ -24,6 +24,7 @@ import { auth } from "./services/firebase";
 import AuthNavigator from "./AuthNavigator";
 import AppNavigator from "./AppNavigator";
 
+
 import {
   colors,
   typography,
@@ -31,13 +32,22 @@ import {
 } from "./theme";
 
 export default function App() {
+
+
   const [user, setUser] =
     useState<User | null>(null);
 
   const [loading, setLoading] =
     useState(true);
 
-  useEffect(() => {
+ useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    setUser(currentUser);
+    setLoading(false);
+  });
+
+  return unsubscribe;
+}, []); useEffect(() => {
     const unsubscribe =
       onAuthStateChanged(
         auth,
