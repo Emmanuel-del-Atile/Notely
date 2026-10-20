@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore/lite";
+import { getFirestore } from "firebase/firestore";
 
 // @ts-ignore Firebase's React Native export is missing from the public TypeScript declaration
 import { initializeAuth } from "firebase/auth";
@@ -18,9 +18,25 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
+
 const { getReactNativePersistence } = require("firebase/auth");
+
 const appStorage = ReactNativeAsyncStorage;
 
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage),
-});
+import { getAuth } from "firebase/auth";
+
+let authInstance;
+
+try {
+  authInstance = initializeAuth(app, {
+    persistence: getReactNativePersistence(appStorage),
+  });
+} catch (error: any) {
+  if (error.code === "auth/already-initialized") {
+    authInstance = getAuth(app);
+  } else {
+    throw error;
+  }
+}
+
+export const auth = authInstance;

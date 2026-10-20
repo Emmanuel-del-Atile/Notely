@@ -327,7 +327,7 @@ export default function Favorites({ navigation }: any) {
                 onPress={() =>
                   navigation.navigate(
                     "NoteDetails",
-                    { note }
+                    { noteId : note.id }
                   )
                 }
                 onLongPress={() =>

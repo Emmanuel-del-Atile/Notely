@@ -1,4 +1,5 @@
 import { db, auth } from "./firebase";
+import NetInfo from "@react-native-community/netinfo";
 
 import type {
   Note,
@@ -7,7 +8,6 @@ import type {
 
 import {
   collection,
-  addDoc,
   query,
   where,
   getDocs,
@@ -17,19 +17,24 @@ import {
   serverTimestamp,
 } from "firebase/firestore/lite";
 
+import {
+  createLocalNote,
+  getLocalNotes,
+  updateLocalNote,
+  markLocalNoteForDeletion,
+  permanentlyDeleteLocalNote,
+  updateLocalPin,
+  updateLocalFavorite,
+  updateLocalColor,
+  upsertLocalNote,
+} from "./localNotes";
+
+import { syncNote } from "./syncService";
+
 /*
 |--------------------------------------------------------------------------
 | NOTES CACHE
 |--------------------------------------------------------------------------
-|
-| The cache lives in memory while the app is running.
-|
-| Key:
-|   user.uid
-|
-| Value:
-|   that user's notes
-|
 */
 
 const notesCache = new Map<string, Note[]>();
@@ -72,89 +77,80 @@ function clearCachedNotes() {
 
 /*
 |--------------------------------------------------------------------------
-| CREATING NOTES
+| CREATE NOTE
 |--------------------------------------------------------------------------
 */
 
 export async function createNote(
   title: string,
   content: string
-) {
+): Promise<Note | null> {
+  if (!title.trim()) {
+    console.log("Title is required");
+    return null;
+  }
+
+  if (!content.trim()) {
+    console.log("Content is required");
+    return null;
+  }
+
+  const user = auth.currentUser;
+
+  if (!user) {
+    console.log("No user is signed in");
+    return null;
+  }
+
   try {
-    if (!title.trim()) {
-      console.log("Title is required");
-      return null;
-    }
+    /*
+    |----------------------------------------------------------------------
+    | 1. SAVE LOCALLY
+    |----------------------------------------------------------------------
+    */
 
-    if (!content.trim()) {
-      console.log("Content is required");
-      return null;
-    }
-
-    const user = auth.currentUser;
-
-    if (!user) {
-      console.log("No user is signed in");
-      return null;
-    }
-
-    const notesCollection = collection(
-      db,
-      "notes"
+    const note = createLocalNote(
+      title,
+      content,
+      user.uid
     );
-
-    const note = {
-      title: title.trim(),
-      content: content.trim(),
-      ownerId: user.uid,
-      createdAt: serverTimestamp(),
-      isPinned: false,
-      isFavorite: false,
-      color: "default" as NoteColor,
-    };
-
-    const docRef = await addDoc(
-      notesCollection,
-      note
-    );
-
-    console.log("Note created:", docRef.id);
 
     /*
-    |--------------------------------------------------------------------------
-    | Update cache
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
+    | 2. UPDATE MEMORY CACHE
+    |----------------------------------------------------------------------
     */
 
     const cachedNotes =
       getCachedNotes();
 
     if (cachedNotes) {
-      const newNote: Note = {
-        id: docRef.id,
-        title: note.title,
-        content: note.content,
-        ownerId: note.ownerId,
-        createdAt: new Date(),
-        updatedAt: null,
-        isPinned: false,
-        isFavorite: false,
-        color: "default",
-      };
-
       setCachedNotes([
-        newNote,
+        note,
         ...cachedNotes,
       ]);
     }
 
-    return {
-      id: docRef.id,
-      ...note,
-    };
+    /*
+    |----------------------------------------------------------------------
+    | 3. TRY CLOUD SYNC
+    |----------------------------------------------------------------------
+    */
+
+    try {
+      await syncNote(note.id);
+    } catch (error) {
+      console.log(
+        "Offline or sync failed. Note remains local:",
+        error
+      );
+    }
+
+    return note;
+
   } catch (error) {
     console.error(
-      "Firestore error:",
+      "Local note creation failed:",
       error
     );
 
@@ -164,7 +160,7 @@ export async function createNote(
 
 /*
 |--------------------------------------------------------------------------
-| READING NOTES
+| GET MY NOTES
 |--------------------------------------------------------------------------
 */
 
@@ -181,7 +177,7 @@ export async function getMyNotes(
 
   /*
   |--------------------------------------------------------------------------
-  | RETURN CACHE
+  | 1. MEMORY CACHE
   |--------------------------------------------------------------------------
   */
 
@@ -193,7 +189,7 @@ export async function getMyNotes(
     !forceRefresh
   ) {
     console.log(
-      "Returning notes from cache"
+      "Returning notes from memory cache"
     );
 
     return cachedNotes;
@@ -201,18 +197,52 @@ export async function getMyNotes(
 
   /*
   |--------------------------------------------------------------------------
-  | FETCH FROM FIRESTORE
+  | 2. SQLITE
+  |--------------------------------------------------------------------------
+  */
+
+  const localNotes =
+    getLocalNotes(user.uid);
+
+  if (localNotes.length > 0) {
+    console.log(
+      "Returning notes from SQLite"
+    );
+
+    setCachedNotes(localNotes);
+
+    return localNotes;
+  }
+  
+
+  const networkState = await NetInfo.fetch();
+
+  const isOnline =
+    networkState.isConnected === true &&
+    networkState.isInternetReachable !== false;
+
+  if (!isOnline) {
+    console.log(
+      "Offline and no local notes available"
+    );
+
+    setCachedNotes([]);
+
+    return [];
+  }
+  
+  /*
+  |--------------------------------------------------------------------------
+  | 3. FIRESTORE
   |--------------------------------------------------------------------------
   */
 
   console.log(
-    "Fetching notes from Firestore"
+    "SQLite empty. Fetching notes from Firestore"
   );
 
-  const notesCollection = collection(
-    db,
-    "notes"
-  );
+  const notesCollection =
+    collection(db, "notes");
 
   const q = query(
     notesCollection,
@@ -227,20 +257,29 @@ export async function getMyNotes(
     await getDocs(q);
 
   const notes: Note[] =
-    snapshot.docs.map((doc) => {
-      const data = doc.data();
+    snapshot.docs.map((snapshotDoc) => {
+      const data =
+        snapshotDoc.data();
 
       return {
-        id: doc.id,
-        title: data.title ?? "",
-        content: data.content ?? "",
-        ownerId: data.ownerId,
+        id: snapshotDoc.id,
+
+        title:
+          data.title ?? "",
+
+        content:
+          data.content ?? "",
+
+        ownerId:
+          data.ownerId,
 
         createdAt:
-          data.createdAt?.toDate() ?? null,
+          data.createdAt?.toDate() ??
+          null,
 
         updatedAt:
-          data.updatedAt?.toDate() ?? null,
+          data.updatedAt?.toDate() ??
+          null,
 
         isPinned:
           data.isPinned ?? false,
@@ -255,7 +294,17 @@ export async function getMyNotes(
 
   /*
   |--------------------------------------------------------------------------
-  | SAVE TO CACHE
+  | 4. SAVE FIRESTORE DATA LOCALLY
+  |--------------------------------------------------------------------------
+  */
+
+  for (const note of notes) {
+    upsertLocalNote(note);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | 5. CACHE
   |--------------------------------------------------------------------------
   */
 
@@ -266,7 +315,7 @@ export async function getMyNotes(
 
 /*
 |--------------------------------------------------------------------------
-| UPDATING NOTES
+| UPDATE NOTE
 |--------------------------------------------------------------------------
 */
 
@@ -274,29 +323,29 @@ export async function updateNote(
   noteId: string,
   title: string,
   content: string
-) {
+): Promise<boolean> {
   try {
-    const noteRef = doc(
-      db,
-      "notes",
-      noteId
-    );
+    /*
+    |----------------------------------------------------------------------
+    | LOCAL FIRST
+    |----------------------------------------------------------------------
+    */
 
-    await updateDoc(noteRef, {
-      title: title.trim(),
-      content: content.trim(),
-      updatedAt: serverTimestamp(),
-    });
+    const updated =
+      updateLocalNote(
+        noteId,
+        title,
+        content
+      );
 
-    console.log(
-      "Note updated:",
-      noteId
-    );
+    if (!updated) {
+      return false;
+    }
 
     /*
-    |--------------------------------------------------------------------------
-    | Update cache
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
+    | CACHE
+    |----------------------------------------------------------------------
     */
 
     const cachedNotes =
@@ -317,7 +366,23 @@ export async function updateNote(
       );
     }
 
+    /*
+    |----------------------------------------------------------------------
+    | CLOUD SYNC
+    |----------------------------------------------------------------------
+    */
+
+    try {
+      await syncNote(noteId);
+    } catch (error) {
+      console.log(
+        "Update saved locally. Sync pending:",
+        error
+      );
+    }
+
     return true;
+
   } catch (error) {
     console.error(
       "Update error:",
@@ -330,7 +395,7 @@ export async function updateNote(
 
 /*
 |--------------------------------------------------------------------------
-| DELETING NOTES
+| DELETE NOTE
 |--------------------------------------------------------------------------
 */
 
@@ -338,23 +403,25 @@ export async function deleteNote(
   noteId: string
 ): Promise<boolean> {
   try {
-    const noteRef = doc(
-      db,
-      "notes",
-      noteId
-    );
+    /*
+    |----------------------------------------------------------------------
+    | Mark for deletion locally
+    |----------------------------------------------------------------------
+    */
 
-    await deleteDoc(noteRef);
+    const marked =
+      markLocalNoteForDeletion(
+        noteId
+      );
 
-    console.log(
-      "Note deleted:",
-      noteId
-    );
+    if (!marked) {
+      return false;
+    }
 
     /*
-    |--------------------------------------------------------------------------
-    | Remove from cache
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
+    | Remove from UI cache
+    |----------------------------------------------------------------------
     */
 
     const cachedNotes =
@@ -369,7 +436,36 @@ export async function deleteNote(
       );
     }
 
+    /*
+    |----------------------------------------------------------------------
+    | Try cloud deletion
+    |--------------------------------------------------------------------------
+    */
+
+    try {
+      const noteRef = doc(
+        db,
+        "notes",
+        noteId
+      );
+
+      await deleteDoc(noteRef);
+
+      console.log(
+        "Note deleted from Firestore:",
+        noteId
+      );
+     permanentlyDeleteLocalNote(noteId);
+
+    } catch (error) {
+      console.log(
+        "Deletion pending cloud sync:",
+        error
+      );
+    }
+
     return true;
+
   } catch (error) {
     console.error(
       "Delete error:",
@@ -382,7 +478,7 @@ export async function deleteNote(
 
 /*
 |--------------------------------------------------------------------------
-| PINNING NOTES
+| TOGGLE PIN
 |--------------------------------------------------------------------------
 */
 
@@ -390,24 +486,18 @@ export async function togglePin(
   noteId: string,
   currentValue: boolean
 ) {
-  const noteRef = doc(
-    db,
-    "notes",
-    noteId
-  );
-
   const newValue =
     !currentValue;
 
-  await updateDoc(noteRef, {
-    isPinned: newValue,
-  });
+  const updated =
+    updateLocalPin(
+      noteId,
+      newValue
+    );
 
-  /*
-  |--------------------------------------------------------------------------
-  | Update cache
-  |--------------------------------------------------------------------------
-  */
+  if (!updated) {
+    return;
+  }
 
   const cachedNotes =
     getCachedNotes();
@@ -424,11 +514,20 @@ export async function togglePin(
       )
     );
   }
+
+  try {
+    await syncNote(noteId);
+  } catch (error) {
+    console.log(
+      "Pin change pending sync:",
+      error
+    );
+  }
 }
 
 /*
 |--------------------------------------------------------------------------
-| FAVORITING NOTES
+| TOGGLE FAVORITE
 |--------------------------------------------------------------------------
 */
 
@@ -436,24 +535,18 @@ export async function toggleFavorite(
   noteId: string,
   currentValue: boolean
 ) {
-  const noteRef = doc(
-    db,
-    "notes",
-    noteId
-  );
-
   const newValue =
     !currentValue;
 
-  await updateDoc(noteRef, {
-    isFavorite: newValue,
-  });
+  const updated =
+    updateLocalFavorite(
+      noteId,
+      newValue
+    );
 
-  /*
-  |--------------------------------------------------------------------------
-  | Update cache
-  |--------------------------------------------------------------------------
-  */
+  if (!updated) {
+    return;
+  }
 
   const cachedNotes =
     getCachedNotes();
@@ -470,11 +563,20 @@ export async function toggleFavorite(
       )
     );
   }
+
+  try {
+    await syncNote(noteId);
+  } catch (error) {
+    console.log(
+      "Favorite change pending sync:",
+      error
+    );
+  }
 }
 
 /*
 |--------------------------------------------------------------------------
-| CHANGING NOTE COLOR
+| UPDATE COLOR
 |--------------------------------------------------------------------------
 */
 
@@ -482,21 +584,15 @@ export async function updateNoteColor(
   noteId: string,
   color: NoteColor
 ) {
-  const noteRef = doc(
-    db,
-    "notes",
-    noteId
-  );
+  const updated =
+    updateLocalColor(
+      noteId,
+      color
+    );
 
-  await updateDoc(noteRef, {
-    color,
-  });
-
-  /*
-  |--------------------------------------------------------------------------
-  | Update cache
-  |--------------------------------------------------------------------------
-  */
+  if (!updated) {
+    return;
+  }
 
   const cachedNotes =
     getCachedNotes();
@@ -513,16 +609,21 @@ export async function updateNoteColor(
       )
     );
   }
+
+  try {
+    await syncNote(noteId);
+  } catch (error) {
+    console.log(
+      "Color change pending sync:",
+      error
+    );
+  }
 }
 
 /*
 |--------------------------------------------------------------------------
 | CLEAR CACHE
 |--------------------------------------------------------------------------
-|
-| Useful when logging out or when we deliberately
-| want to force the next request to hit Firestore.
-|
 */
 
 export function clearNotesCache() {

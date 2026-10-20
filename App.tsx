@@ -23,6 +23,8 @@ import { auth } from "./services/firebase";
 
 import AuthNavigator from "./AuthNavigator";
 import AppNavigator from "./AppNavigator";
+import { initializeDatabase } from "./services/database";
+import { startNetworkSync } from "./services/network";
 
 
 import {
@@ -32,7 +34,16 @@ import {
 } from "./theme";
 
 export default function App() {
+  useEffect(() => {
+    const unsubscribe =
+      startNetworkSync();
 
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    initializeDatabase();
+  }, []);
 
   const [user, setUser] =
     useState<User | null>(null);
@@ -47,18 +58,7 @@ export default function App() {
   });
 
   return unsubscribe;
-}, []); useEffect(() => {
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        (currentUser) => {
-          setUser(currentUser);
-          setLoading(false);
-        }
-      );
-
-    return unsubscribe;
-  }, []);
+}, []);
 
   if (loading) {
     return (

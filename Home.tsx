@@ -395,7 +395,7 @@ export default function Home({ navigation }: any) {
             style={[styles.noteCard, { backgroundColor: noteColors[note.color] }]}>
               <Pressable
                 style={styles.noteContent}
-                onPress={() => navigation.navigate("NoteDetails", { note })}
+                onPress={() => navigation.navigate("NoteDetails", { noteId : note.id })}
                 onLongPress={() => setSelectedNote(note)}
                 delayLongPress={400}
               >

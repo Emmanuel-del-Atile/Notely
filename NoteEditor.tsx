@@ -1,3 +1,4 @@
+
 import {
   View,
   Text,
@@ -7,14 +8,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import type { Note } from "./types/note";
 
 import {
   createNote,
   updateNote,
 } from "./services/notes";
+
+import { getLocalNote } from "./services/localNotes";
 
 import {
   colors,
@@ -28,20 +34,53 @@ export default function NoteEditor({
   navigation,
   route,
 }: any) {
-  const { note } = route.params || {};
+  const noteId: string | undefined =
+    route.params?.noteId;
+
+  const [note, setNote] = useState<Note | null>(null);
+  const [isLoading, setIsLoading] = useState(
+    Boolean(noteId)
+  );
   const [isSaving, setIsSaving] = useState(false);
-  const [title, setTitle] = useState(
-    note?.title || ""
-  );
 
-  const [content, setContent] = useState(
-    note?.content || ""
-  );
-
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (!noteId) {
+      setNote(null);
+      setTitle("");
+      setContent("");
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const localNote = getLocalNote(noteId);
+
+      if (!localNote) {
+        setNote(null);
+        setError("This note could not be found.");
+        return;
+      }
+
+      setNote(localNote);
+      setTitle(localNote.title);
+      setContent(localNote.content);
+    } catch (loadError) {
+      console.error("Failed to load note:", loadError);
+      setError("Failed to load this note. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [noteId]);
+
   async function handleSave() {
-    if (isSaving) return;
+    if (isSaving || isLoading) return;
 
     setError("");
 
@@ -52,22 +91,43 @@ export default function NoteEditor({
       return;
     }
 
+    if (noteId && !note) {
+      setError("The note could not be loaded. Please go back and try again.");
+      return;
+    }
+
     try {
       setIsSaving(true);
 
-      if (note) {
-        await updateNote(note.id, title, content);
+      if (noteId && note) {
+        await updateNote(noteId, title, content);
       } else {
         await createNote(title, content);
       }
 
       navigation.goBack();
-    } catch (error) {
+    } catch (saveError) {
+      console.error("Failed to save note:", saveError);
       setError("Failed to save note. Please try again.");
     } finally {
       setIsSaving(false);
     }
   }
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator
+          size="large"
+          color={colors.primary}
+        />
+        <Text style={styles.loadingText}>
+          Loading note...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.keyboard}
@@ -82,24 +142,19 @@ export default function NoteEditor({
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-
         <View style={styles.header}>
           <View>
-            <Text style={styles.brand}>
-              Notely
-            </Text>
+            <Text style={styles.brand}>Notely</Text>
 
             <Text style={styles.mode}>
-              {note
+              {noteId
                 ? "Edit your note"
                 : "Capture a new thought"}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.label}>
-          Title
-        </Text>
+        <Text style={styles.label}>Title</Text>
 
         <TextInput
           style={styles.titleInput}
@@ -108,11 +163,10 @@ export default function NoteEditor({
           value={title}
           onChangeText={setTitle}
           maxLength={100}
+          editable={!isSaving}
         />
 
-        <Text style={styles.label}>
-          Note
-        </Text>
+        <Text style={styles.label}>Note</Text>
 
         <TextInput
           style={styles.contentInput}
@@ -122,26 +176,26 @@ export default function NoteEditor({
           onChangeText={setContent}
           multiline
           textAlignVertical="top"
+          editable={!isSaving}
         />
 
         {error !== "" && (
-          <Text style={styles.error}>
-            {error}
-          </Text>
+          <Text style={styles.error}>{error}</Text>
         )}
 
         <Pressable
           style={[
             styles.saveButton,
-            isSaving && styles.disabledButton,
+            (isSaving || isLoading || (noteId && !note)) &&
+              styles.disabledButton,
           ]}
           onPress={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || isLoading || (Boolean(noteId) && !note)}
         >
           <Text style={styles.saveText}>
             {isSaving
               ? "Saving..."
-              : note
+              : noteId
                 ? "Save Changes"
                 : "Save Note"}
           </Text>
@@ -151,11 +205,8 @@ export default function NoteEditor({
           style={styles.cancelButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.cancelText}>
-            Cancel
-          </Text>
+          <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -174,6 +225,19 @@ const styles = StyleSheet.create({
   container: {
     padding: spacing.xxl,
     paddingBottom: spacing.huge,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  loadingText: {
+    marginTop: spacing.md,
+    color: colors.secondaryText,
+    fontSize: typography.body,
   },
 
   header: {
@@ -238,8 +302,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: spacing.xxl,
   },
-  Button:{
-    opacity: 0.5
+
+  disabledButton: {
+    opacity: 0.5,
   },
 
   saveText: {
@@ -257,7 +322,4 @@ const styles = StyleSheet.create({
     color: colors.secondaryText,
     fontWeight: typography.semibold,
   },
-  disabledButton: {
-  opacity: 0.5,
-},
 });

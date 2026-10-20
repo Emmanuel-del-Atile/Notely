@@ -1,17 +1,29 @@
 import { View, Text, Pressable, StyleSheet, Alert } from "react-native";
-
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { Note } from "./types/note";
 import { formatDate } from "./utils/date";
 
-import { togglePin, toggleFavorite, deleteNote, updateNoteColor } from "./services/notes";
+import {
+  togglePin,
+  toggleFavorite,
+  deleteNote,
+  updateNoteColor,
+} from "./services/notes";
+
+import { getLocalNote, getLocalNoteSyncStatus } from "./services/localNotes";
+import {
+  resolveKeepMyVersion,
+  resolveKeepCloudVersion,
+} from "./services/syncService";
 
 import NoteActionMenu from "./components/NoteActionMenu";
 import NoteColorPicker from "./components/NoteColorPicker";
 
 import { colors, typography, spacing } from "./theme";
+
 const noteColors = {
   default: colors.background,
   yellow: "#FFF3A3",
@@ -21,21 +33,38 @@ const noteColors = {
 };
 
 export default function NoteDetails({ route, navigation }: any) {
-  const { note: initialNote }: { note: Note } = route.params;
+  const { noteId }: { noteId: string } = route.params;
 
-  const [note, setNote] = useState(initialNote);
+  const [note, setNote] = useState<Note | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
 
+  useFocusEffect(
+    useCallback(() => {
+      const localNote = getLocalNote(noteId);
+      const status = getLocalNoteSyncStatus(noteId);
+
+      setNote(localNote);
+      setSyncStatus(status);
+    }, [noteId]),
+  );
+
   // Toggle pin
   async function handleTogglePin() {
+    if (!note) return;
+
     try {
       await togglePin(note.id, note.isPinned);
 
-      setNote((currentNote) => ({
-        ...currentNote,
-        isPinned: !currentNote.isPinned,
-      }));
+      setNote((currentNote) =>
+        currentNote
+          ? {
+              ...currentNote,
+              isPinned: !currentNote.isPinned,
+            }
+          : null,
+      );
 
       setMenuVisible(false);
     } catch (error) {
@@ -47,13 +76,19 @@ export default function NoteDetails({ route, navigation }: any) {
 
   // Toggle favorite
   async function handleToggleFavorite() {
+    if (!note) return;
+
     try {
       await toggleFavorite(note.id, note.isFavorite);
 
-      setNote((currentNote) => ({
-        ...currentNote,
-        isFavorite: !currentNote.isFavorite,
-      }));
+      setNote((currentNote) =>
+        currentNote
+          ? {
+              ...currentNote,
+              isFavorite: !currentNote.isFavorite,
+            }
+          : null,
+      );
 
       setMenuVisible(false);
     } catch (error) {
@@ -63,37 +98,40 @@ export default function NoteDetails({ route, navigation }: any) {
     }
   }
 
-  // Change color
+  // Open color picker
   function handleChangeColor() {
     setMenuVisible(false);
     setColorPickerVisible(true);
   }
 
+  // Change note color
   async function handleSelectColor(color: Note["color"]) {
-  try {
-    await updateNoteColor(note.id, color);
+    if (!note) return;
 
-    setNote((currentNote) => ({
-      ...currentNote,
-      color,
-    }));
+    try {
+      await updateNoteColor(note.id, color);
 
-    setColorPickerVisible(false);
-  } catch (error) {
-    console.error(
-      "Failed to update note color:",
-      error
-    );
+      setNote((currentNote) =>
+        currentNote
+          ? {
+              ...currentNote,
+              color,
+            }
+          : null,
+      );
 
-    Alert.alert(
-      "Error",
-      "Failed to change note color. Please try again."
-    );
+      setColorPickerVisible(false);
+    } catch (error) {
+      console.error("Failed to update note color:", error);
+
+      Alert.alert("Error", "Failed to change note color. Please try again.");
+    }
   }
-}
 
   // Delete note
   function handleDelete() {
+    if (!note) return;
+
     setMenuVisible(false);
 
     Alert.alert("Delete Note", "Are you sure you want to delete this note?", [
@@ -110,14 +148,12 @@ export default function NoteDetails({ route, navigation }: any) {
 
             if (!success) {
               Alert.alert("Error", "Failed to delete note.");
-
               return;
             }
 
             navigation.goBack();
           } catch (error) {
             console.error("Failed to delete note:", error);
-
             Alert.alert("Error", "Failed to delete note.");
           }
         },
@@ -127,11 +163,68 @@ export default function NoteDetails({ route, navigation }: any) {
 
   // Edit note
   function handleEdit() {
+    if (!note) return;
+
     setMenuVisible(false);
 
     navigation.navigate("NoteEditor", {
-      note,
+      noteId: note.id,
     });
+  }
+
+  async function handleKeepMyVersion() {
+    try {
+      const success = await resolveKeepMyVersion(noteId);
+
+      if (!success) {
+        Alert.alert(
+          "Conflict remains",
+          "We couldn't safely resolve this conflict. Your local note is preserved.",
+        );
+        return;
+      }
+
+      setSyncStatus(getLocalNoteSyncStatus(noteId));
+
+      Alert.alert("Sync complete", "Your local version has been synchronized.");
+    } catch (error) {
+      console.error("Failed to keep local version:", error);
+      Alert.alert("Error", "Couldn't resolve the conflict.");
+    }
+  }
+
+  async function handleKeepCloudVersion() {
+    try {
+      const success = await resolveKeepCloudVersion(noteId);
+
+      if (!success) {
+        Alert.alert(
+          "Conflict remains",
+          "We couldn't load the cloud version. Your local note is preserved.",
+        );
+        return;
+      }
+
+      const localNote = getLocalNote(noteId);
+
+      setNote(localNote);
+      setSyncStatus(getLocalNoteSyncStatus(noteId));
+
+      Alert.alert(
+        "Cloud version restored",
+        "The local note now matches the cloud version.",
+      );
+    } catch (error) {
+      console.error("Failed to keep cloud version:", error);
+      Alert.alert("Error", "Couldn't restore the cloud version.");
+    }
+  }
+  if (!note) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.content}>Note not found.</Text>
+      </View>
+    );
   }
 
   return (
@@ -148,9 +241,45 @@ export default function NoteDetails({ route, navigation }: any) {
         </Pressable>
       </View>
 
+      {/* Conflict Notice */}
+      {syncStatus === "conflict" && (
+        <View style={styles.conflictNotice}>
+          <Ionicons name="warning-outline" size={22} color={colors.primary} />
+
+          <View style={styles.conflictTextContainer}>
+            <Text style={styles.conflictTitle}>Sync conflict</Text>
+
+            <Text style={styles.conflictMessage}>
+              This note has a different version in the cloud. Your local version
+              is preserved.
+            </Text>
+          </View>
+
+          <View style={styles.conflictActions}>
+            <Pressable
+              style={styles.conflictButton}
+              onPress={handleKeepMyVersion}
+            >
+              <Text style={styles.conflictButtonText}>Keep my version</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.conflictButton}
+              onPress={handleKeepCloudVersion}
+            >
+              <Text style={styles.conflictButtonText}>Keep cloud version</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Note Content */}
-      <View 
-      style={[styles.contentContainer, { backgroundColor: noteColors[note.color] }]}>
+      <View
+        style={[
+          styles.contentContainer,
+          { backgroundColor: noteColors[note.color] },
+        ]}
+      >
         <View style={styles.titleRow}>
           <Text style={styles.title}>{note.title}</Text>
 
@@ -178,7 +307,7 @@ export default function NoteDetails({ route, navigation }: any) {
         <Ionicons name="pencil-outline" size={28} color={colors.background} />
       </Pressable>
 
-      {/* Reusable Note Action Menu */}
+      {/* Note Action Menu */}
       {menuVisible && (
         <NoteActionMenu
           note={note}
@@ -191,6 +320,7 @@ export default function NoteDetails({ route, navigation }: any) {
         />
       )}
 
+      {/* Color Picker */}
       {colorPickerVisible && (
         <NoteColorPicker
           currentColor={note.color}
@@ -231,6 +361,57 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  conflictNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    margin: spacing.md,
+    borderRadius: 10,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  conflictTextContainer: {
+    flex: 1,
+  },
+
+  conflictTitle: {
+    fontSize: typography.body,
+    fontWeight: typography.bold,
+    color: colors.text,
+    marginBottom: 4,
+  },
+
+  conflictMessage: {
+    fontSize: typography.caption,
+    color: colors.secondaryText,
+    lineHeight: 20,
+  },
+
+  conflictActions: {
+    width: "100%",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+
+  conflictButton: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  conflictButtonText: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: typography.bold,
   },
 
   contentContainer: {
@@ -277,15 +458,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
-
     elevation: 6,
-
     shadowColor: colors.text,
     shadowOffset: {
       width: 0,
       height: 4,
     },
-
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
