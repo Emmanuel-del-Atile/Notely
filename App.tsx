@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useState,
@@ -21,11 +22,11 @@ import {
 
 import { auth } from "./services/firebase";
 
+import { ThemeProvider } from "./theme/ThemeContext";
 import AuthNavigator from "./AuthNavigator";
 import AppNavigator from "./AppNavigator";
 import { initializeDatabase } from "./services/database";
 import { startNetworkSync } from "./services/network";
-
 
 import {
   colors,
@@ -34,10 +35,12 @@ import {
 } from "./theme";
 
 export default function App() {
-  useEffect(() => {
-    const unsubscribe =
-      startNetworkSync();
 
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = startNetworkSync();
     return unsubscribe;
   }, []);
 
@@ -45,53 +48,43 @@ export default function App() {
     initializeDatabase();
   }, []);
 
-  const [user, setUser] =
-    useState<User | null>(null);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
 
-  const [loading, setLoading] =
-    useState(true);
-
- useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-    setUser(currentUser);
-    setLoading(false);
-  });
-
-  return unsubscribe;
-}, []);
+    return unsubscribe;
+  }, []);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-
         <View style={styles.logo}>
-          <Text style={styles.logoText}>
-            N
-          </Text>
+          <Text style={styles.logoText}>N</Text>
         </View>
 
-        <Text style={styles.brand}>
-          Notely
-        </Text>
+        <Text style={styles.brand}>Notely</Text>
 
         <ActivityIndicator
           size="small"
           color={colors.primary}
           style={styles.loader}
         />
-
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
-      {user ? (
-        <AppNavigator />
-      ) : (
-        <AuthNavigator />
-      )}
-    </NavigationContainer>
+    <ThemeProvider>
+      <NavigationContainer>
+        {user ? (
+          <AppNavigator />
+        ) : (
+          <AuthNavigator />
+        )}
+      </NavigationContainer>
+    </ThemeProvider>
   );
 }
 

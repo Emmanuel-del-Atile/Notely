@@ -15,7 +15,7 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
-} from "firebase/firestore/lite";
+} from "firebase/firestore";
 
 import {
   createLocalNote,
@@ -455,7 +455,11 @@ export async function deleteNote(
         "Note deleted from Firestore:",
         noteId
       );
-     permanentlyDeleteLocalNote(noteId);
+      const currentUser = auth.currentUser;
+
+      if (currentUser) {
+        permanentlyDeleteLocalNote(noteId, currentUser.uid);
+}
 
     } catch (error) {
       console.log(

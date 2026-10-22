@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1066273066975",
+    "project_id": "solve-it-d4338",
+    "storage_bucket": "solve-it-d4338.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1066273066975:android:496af00d39f6b74638be6a",
+        "android_client_info": {
+          "package_name": "com.kweku_e.notely"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1066273066975-unclldbjrcghbn7j3j6cuaopbj6oo7lf.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgFT4vAnthj9szxbXMxoc6tkB5L6Y4KNA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1066273066975-unclldbjrcghbn7j3j6cuaopbj6oo7lf.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

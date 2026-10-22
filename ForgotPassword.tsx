@@ -1,3 +1,4 @@
+
 import {
   View,
   Text,
@@ -7,59 +8,71 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 
 import { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+
 import { resetPassword } from "./services/auth";
 
-import {
-  colors,
-  typography,
-  spacing,
-} from "./theme";
+import { typography, spacing } from "./theme";
+import { useTheme } from "./theme/ThemeContext";
+import type { ThemeColors } from "./theme/colors";
 
 export default function ForgotPassword({
   navigation,
   route,
 }: any) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
+
   const from = route?.params?.from;
 
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   async function handleReset() {
+    if (isLoading) return;
+
     setMessage("");
     setError("");
 
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail) {
-      setError(
-        "Please enter your email address."
-      );
+      setError("Please enter your email address.");
       return;
     }
 
-    if (!trimmedEmail.includes("@")) {
-      setError(
-        "Please enter a valid email address."
-      );
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("Please enter a valid email address.");
       return;
     }
 
-    const success = await resetPassword(
-      trimmedEmail
-    );
+    try {
+      setIsLoading(true);
 
-    if (success) {
-      setMessage(
-        "Password reset link sent. Check your email."
-      );
-    } else {
+      const success = await resetPassword(trimmedEmail);
+
+      if (success) {
+        setMessage(
+          "Password reset link sent. Check your email."
+        );
+      } else {
+        setError(
+          "We couldn't send the reset link. Please try again."
+        );
+      }
+    } catch (resetError) {
+      console.error("Password reset failed:", resetError);
       setError(
         "We couldn't send the reset link. Please try again."
       );
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -76,24 +89,26 @@ export default function ForgotPassword({
   return (
     <KeyboardAvoidingView
       style={styles.keyboard}
-      behavior={
-        Platform.OS === "ios"
-          ? "padding"
-          : undefined
-      }
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.container}>
-
           <View style={styles.icon}>
-            <Text style={styles.iconText}>
-              ↻
-            </Text>
+            <Ionicons
+              name="key-outline"
+              size={28}
+              color={colors.primary}
+              accessible={false}
+            />
           </View>
 
-          <Text style={styles.title}>
+          <Text
+            style={styles.title}
+            accessibilityRole="header"
+          >
             Reset your password
           </Text>
 
@@ -102,9 +117,7 @@ export default function ForgotPassword({
             account and we'll send you a reset link.
           </Text>
 
-          <Text style={styles.label}>
-            Email
-          </Text>
+          <Text style={styles.label}>Email</Text>
 
           <TextInput
             style={styles.input}
@@ -115,161 +128,221 @@ export default function ForgotPassword({
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            autoComplete="email"
+            editable={!isLoading}
+            accessibilityLabel="Email address"
+            returnKeyType="send"
+            onSubmitEditing={handleReset}
           />
 
           {error !== "" && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>
-                {error}
-              </Text>
+            <View
+              style={styles.errorBox}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={20}
+                color={colors.danger}
+              />
+              <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
 
           {message !== "" && (
-            <View style={styles.successBox}>
-              <Text style={styles.successText}>
-                {message}
-              </Text>
+            <View
+              style={styles.successBox}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={20}
+                color={colors.success}
+              />
+              <Text style={styles.successText}>{message}</Text>
             </View>
           )}
 
           <Pressable
-            style={styles.primaryButton}
+            style={[
+              styles.primaryButton,
+              isLoading && styles.disabledButton,
+            ]}
             onPress={handleReset}
+            disabled={isLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Send password reset link"
           >
-            <Text style={styles.primaryButtonText}>
-              Send Reset Link
-            </Text>
+            {isLoading ? (
+              <View style={styles.loadingContent}>
+                <ActivityIndicator color={colors.white} />
+                <Text style={styles.primaryButtonText}>
+                  Sending...
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                Send Reset Link
+              </Text>
+            )}
           </Pressable>
 
           <Pressable
             style={styles.backButton}
             onPress={handleBack}
+            disabled={isLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            <Text style={styles.backText}>
-              ← Back
-            </Text>
+            <Ionicons
+              name="arrow-back"
+              size={18}
+              color={colors.secondaryText}
+            />
+            <Text style={styles.backText}>Back</Text>
           </Pressable>
-
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  keyboard: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    keyboard: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  scroll: {
-    flexGrow: 1,
-  },
+    scroll: {
+      flexGrow: 1,
+    },
 
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.huge,
-  },
+    container: {
+      flex: 1,
+      justifyContent: "center",
+      paddingHorizontal: spacing.xxl,
+      paddingVertical: spacing.huge,
+    },
 
-  icon: {
-    width: 58,
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: colors.primaryLight,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: spacing.xl,
-  },
+    icon: {
+      width: 58,
+      height: 58,
+      borderRadius: 18,
+      backgroundColor: colors.primaryLight,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: spacing.xl,
+    },
 
-  iconText: {
-    color: colors.primary,
-    fontSize: 28,
-    fontWeight: typography.bold,
-  },
+    title: {
+      fontSize: typography.title,
+      fontWeight: typography.bold,
+      color: colors.text,
+      marginBottom: spacing.sm,
+    },
 
-  title: {
-    fontSize: typography.title,
-    fontWeight: typography.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
+    description: {
+      fontSize: typography.body,
+      lineHeight: 23,
+      color: colors.secondaryText,
+      marginBottom: spacing.xxl,
+    },
 
-  description: {
-    fontSize: typography.body,
-    lineHeight: 23,
-    color: colors.secondaryText,
-    marginBottom: spacing.xxl,
-  },
+    label: {
+      fontSize: typography.bodySmall,
+      fontWeight: typography.semibold,
+      color: colors.text,
+      marginBottom: spacing.sm,
+    },
 
-  label: {
-    fontSize: typography.bodySmall,
-    fontWeight: typography.semibold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
+    input: {
+      minHeight: 54,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 14,
+      paddingHorizontal: spacing.lg,
+      fontSize: typography.body,
+      color: colors.text,
+    },
 
-  input: {
-    height: 54,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: spacing.lg,
-    fontSize: typography.body,
-    color: colors.text,
-  },
+    errorBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      backgroundColor: colors.dangerLight,
+      borderRadius: 12,
+      padding: spacing.md,
+      marginTop: spacing.md,
+    },
 
-  errorBox: {
-    backgroundColor: colors.dangerLight,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
+    errorText: {
+      flex: 1,
+      color: colors.danger,
+      fontSize: typography.bodySmall,
+      lineHeight: 20,
+    },
 
-  errorText: {
-    color: colors.danger,
-    fontSize: typography.bodySmall,
-  },
+    successBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      backgroundColor: colors.successLight,
+      borderRadius: 12,
+      padding: spacing.md,
+      marginTop: spacing.md,
+    },
 
-  successBox: {
-    backgroundColor: colors.successLight,
-    borderRadius: 12,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
+    successText: {
+      flex: 1,
+      color: colors.success,
+      fontSize: typography.bodySmall,
+      lineHeight: 20,
+    },
 
-  successText: {
-    color: colors.success,
-    fontSize: typography.bodySmall,
-  },
+    primaryButton: {
+      minHeight: 54,
+      borderRadius: 14,
+      backgroundColor: colors.primary,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: spacing.xl,
+      paddingHorizontal: spacing.lg,
+    },
 
-  primaryButton: {
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: spacing.xl,
-  },
+    loadingContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.sm,
+    },
 
-  primaryButtonText: {
-    color: colors.white,
-    fontSize: typography.body,
-    fontWeight: typography.bold,
-  },
+    disabledButton: {
+      opacity: 0.6,
+    },
 
-  backButton: {
-    alignItems: "center",
-    padding: spacing.lg,
-    marginTop: spacing.sm,
-  },
+    primaryButtonText: {
+      color: colors.white,
+      fontSize: typography.body,
+      fontWeight: typography.bold,
+    },
 
-  backText: {
-    color: colors.secondaryText,
-    fontSize: typography.bodySmall,
-    fontWeight: typography.semibold,
-  },
-});
+    backButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.sm,
+      padding: spacing.lg,
+      marginTop: spacing.sm,
+    },
+
+    backText: {
+      color: colors.secondaryText,
+      fontSize: typography.bodySmall,
+      fontWeight: typography.semibold,
+    },
+  });
+}

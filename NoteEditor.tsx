@@ -23,10 +23,12 @@ import {
 import { getLocalNote } from "./services/localNotes";
 
 import {
-  colors,
   typography,
   spacing,
 } from "./theme";
+
+import { useTheme } from "./theme/ThemeContext";
+import type { ThemeColors } from "./theme/colors";
 
 import { validateNote } from "./utils/validation";
 
@@ -34,13 +36,13 @@ export default function NoteEditor({
   navigation,
   route,
 }: any) {
-  const noteId: string | undefined =
-    route.params?.noteId;
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
+
+  const noteId: string | undefined = route.params?.noteId;
 
   const [note, setNote] = useState<Note | null>(null);
-  const [isLoading, setIsLoading] = useState(
-    Boolean(noteId)
-  );
+  const [isLoading, setIsLoading] = useState(Boolean(noteId));
   const [isSaving, setIsSaving] = useState(false);
 
   const [title, setTitle] = useState("");
@@ -92,7 +94,9 @@ export default function NoteEditor({
     }
 
     if (noteId && !note) {
-      setError("The note could not be loaded. Please go back and try again.");
+      setError(
+        "The note could not be loaded. Please go back and try again."
+      );
       return;
     }
 
@@ -121,6 +125,7 @@ export default function NoteEditor({
           size="large"
           color={colors.primary}
         />
+
         <Text style={styles.loadingText}>
           Loading note...
         </Text>
@@ -131,11 +136,7 @@ export default function NoteEditor({
   return (
     <KeyboardAvoidingView
       style={styles.keyboard}
-      behavior={
-        Platform.OS === "ios"
-          ? "padding"
-          : undefined
-      }
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         style={styles.scroll}
@@ -144,7 +145,12 @@ export default function NoteEditor({
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.brand}>Notely</Text>
+            <Text
+              style={styles.brand}
+              accessibilityRole="header"
+            >
+              Notely
+            </Text>
 
             <Text style={styles.mode}>
               {noteId
@@ -164,6 +170,8 @@ export default function NoteEditor({
           onChangeText={setTitle}
           maxLength={100}
           editable={!isSaving}
+          accessibilityLabel="Note title"
+          returnKeyType="next"
         />
 
         <Text style={styles.label}>Note</Text>
@@ -177,33 +185,59 @@ export default function NoteEditor({
           multiline
           textAlignVertical="top"
           editable={!isSaving}
+          accessibilityLabel="Note content"
         />
 
         {error !== "" && (
-          <Text style={styles.error}>{error}</Text>
+          <Text
+            style={styles.error}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {error}
+          </Text>
         )}
 
         <Pressable
           style={[
             styles.saveButton,
-            (isSaving || isLoading || (noteId && !note)) &&
+            (isSaving || isLoading || (Boolean(noteId) && !note)) &&
               styles.disabledButton,
           ]}
           onPress={handleSave}
-          disabled={isSaving || isLoading || (Boolean(noteId) && !note)}
-        >
-          <Text style={styles.saveText}>
-            {isSaving
-              ? "Saving..."
+          disabled={
+            isSaving || isLoading || (Boolean(noteId) && !note)
+          }
+          accessibilityRole="button"
+          accessibilityLabel={
+            isSaving
+              ? "Saving note"
               : noteId
-                ? "Save Changes"
-                : "Save Note"}
-          </Text>
+                ? "Save changes"
+                : "Save note"
+          }
+        >
+          {isSaving ? (
+            <View style={styles.savingContent}>
+              <ActivityIndicator
+                size="small"
+                color={colors.white}
+              />
+              <Text style={styles.saveText}>Saving...</Text>
+            </View>
+          ) : (
+            <Text style={styles.saveText}>
+              {noteId ? "Save Changes" : "Save Note"}
+            </Text>
+          )}
         </Pressable>
 
         <Pressable
           style={styles.cancelButton}
           onPress={() => navigation.goBack()}
+          disabled={isSaving}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel editing"
         >
           <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
@@ -212,114 +246,125 @@ export default function NoteEditor({
   );
 }
 
-const styles = StyleSheet.create({
-  keyboard: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    keyboard: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  scroll: {
-    flex: 1,
-  },
+    scroll: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  container: {
-    padding: spacing.xxl,
-    paddingBottom: spacing.huge,
-  },
+    container: {
+      padding: spacing.xxl,
+      paddingBottom: spacing.huge,
+    },
 
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    loadingContainer: {
+      flex: 1,
+      backgroundColor: colors.background,
+      justifyContent: "center",
+      alignItems: "center",
+    },
 
-  loadingText: {
-    marginTop: spacing.md,
-    color: colors.secondaryText,
-    fontSize: typography.body,
-  },
+    loadingText: {
+      marginTop: spacing.md,
+      color: colors.secondaryText,
+      fontSize: typography.body,
+    },
 
-  header: {
-    marginBottom: spacing.xxxl,
-  },
+    header: {
+      marginBottom: spacing.xxxl,
+    },
 
-  brand: {
-    fontSize: typography.title,
-    fontWeight: typography.bold,
-    color: colors.text,
-  },
+    brand: {
+      fontSize: typography.title,
+      fontWeight: typography.bold,
+      color: colors.text,
+    },
 
-  mode: {
-    color: colors.secondaryText,
-    fontSize: typography.bodySmall,
-    marginTop: spacing.xs,
-  },
+    mode: {
+      color: colors.secondaryText,
+      fontSize: typography.bodySmall,
+      marginTop: spacing.xs,
+    },
 
-  label: {
-    color: colors.text,
-    fontSize: typography.bodySmall,
-    fontWeight: typography.semibold,
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
-  },
+    label: {
+      color: colors.text,
+      fontSize: typography.bodySmall,
+      fontWeight: typography.semibold,
+      marginBottom: spacing.sm,
+      marginTop: spacing.lg,
+    },
 
-  titleInput: {
-    height: 56,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: spacing.lg,
-    fontSize: typography.subheading,
-    fontWeight: typography.semibold,
-    color: colors.text,
-  },
+    titleInput: {
+      minHeight: 56,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 14,
+      paddingHorizontal: spacing.lg,
+      fontSize: typography.subheading,
+      fontWeight: typography.semibold,
+      color: colors.text,
+    },
 
-  contentInput: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    padding: spacing.lg,
-    minHeight: 260,
-    fontSize: typography.body,
-    lineHeight: 24,
-    color: colors.text,
-  },
+    contentInput: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 14,
+      padding: spacing.lg,
+      minHeight: 260,
+      fontSize: typography.body,
+      lineHeight: 24,
+      color: colors.text,
+    },
 
-  error: {
-    color: colors.danger,
-    fontSize: typography.bodySmall,
-    marginTop: spacing.md,
-  },
+    error: {
+      color: colors.danger,
+      fontSize: typography.bodySmall,
+      marginTop: spacing.md,
+    },
 
-  saveButton: {
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: spacing.xxl,
-  },
+    saveButton: {
+      minHeight: 54,
+      borderRadius: 14,
+      backgroundColor: colors.primary,
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: spacing.xxl,
+      paddingHorizontal: spacing.lg,
+    },
 
-  disabledButton: {
-    opacity: 0.5,
-  },
+    savingContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.sm,
+    },
 
-  saveText: {
-    color: colors.white,
-    fontSize: typography.body,
-    fontWeight: typography.bold,
-  },
+    disabledButton: {
+      opacity: 0.5,
+    },
 
-  cancelButton: {
-    alignItems: "center",
-    padding: spacing.lg,
-  },
+    saveText: {
+      color: colors.white,
+      fontSize: typography.body,
+      fontWeight: typography.bold,
+    },
 
-  cancelText: {
-    color: colors.secondaryText,
-    fontWeight: typography.semibold,
-  },
-});
+    cancelButton: {
+      alignItems: "center",
+      padding: spacing.lg,
+    },
+
+    cancelText: {
+      color: colors.secondaryText,
+      fontWeight: typography.semibold,
+    },
+  });
+}

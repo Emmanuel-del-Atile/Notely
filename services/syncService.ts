@@ -21,7 +21,6 @@ import {
   keepCloudVersion,
 } from "./localNotes";
 
-
 import NetInfo from "@react-native-community/netinfo";
 
 let isSyncing = false;
@@ -35,10 +34,7 @@ let isSyncing = false;
 async function isOnline(): Promise<boolean> {
   const state = await NetInfo.fetch();
 
-  return (
-    state.isConnected === true &&
-    state.isInternetReachable !== false
-  );
+  return state.isConnected === true && state.isInternetReachable !== false;
 }
 
 async function getOwnedCloudNote(noteId: string) {
@@ -62,8 +58,7 @@ async function getOwnedCloudNote(noteId: string) {
   }
 
   const updatedAt =
-    data.updatedAt &&
-    typeof data.updatedAt.toDate === "function"
+    data.updatedAt && typeof data.updatedAt.toDate === "function"
       ? data.updatedAt.toDate().toISOString()
       : null;
 
@@ -76,8 +71,7 @@ async function getOwnedCloudNote(noteId: string) {
     content: String(data.content ?? ""),
     ownerId: user.uid,
     createdAt:
-      data.createdAt &&
-      typeof data.createdAt.toDate === "function"
+      data.createdAt && typeof data.createdAt.toDate === "function"
         ? data.createdAt.toDate().toISOString()
         : new Date().toISOString(),
     updatedAt,
@@ -93,10 +87,7 @@ async function getOwnedCloudNote(noteId: string) {
 |--------------------------------------------------------------------------
 */
 
-
-export async function resolveKeepMyVersion(
-  noteId: string
-): Promise<boolean> {
+export async function resolveKeepMyVersion(noteId: string): Promise<boolean> {
   const user = auth.currentUser;
 
   if (!user || !(await isOnline())) {
@@ -106,10 +97,7 @@ export async function resolveKeepMyVersion(
   const cloudNote = await getOwnedCloudNote(noteId);
 
   if (!cloudNote) {
-    console.warn(
-      "Cannot resolve conflict: cloud note unavailable.",
-      noteId
-    );
+    console.warn("Cannot resolve conflict: cloud note unavailable.", noteId);
     return false;
   }
 
@@ -119,7 +107,7 @@ export async function resolveKeepMyVersion(
     noteId,
     cloudNote.updatedAt,
     cloudNote.title,
-    cloudNote.content
+    cloudNote.content,
   );
 
   if (!prepared) {
@@ -131,10 +119,8 @@ export async function resolveKeepMyVersion(
   return syncNote(noteId);
 }
 
-
-
 export async function resolveKeepCloudVersion(
-  noteId: string
+  noteId: string,
 ): Promise<boolean> {
   const user = auth.currentUser;
 
@@ -145,10 +131,7 @@ export async function resolveKeepCloudVersion(
   const cloudNote = await getOwnedCloudNote(noteId);
 
   if (!cloudNote) {
-    console.warn(
-      "Cannot resolve conflict: cloud note unavailable.",
-      noteId
-    );
+    console.warn("Cannot resolve conflict: cloud note unavailable.", noteId);
     return false;
   }
 
@@ -159,7 +142,7 @@ export async function resolveKeepCloudVersion(
   if (localStatus !== "conflict") {
     console.warn(
       "Cannot resolve conflict: local note is no longer conflicted.",
-      noteId
+      noteId,
     );
     return false;
   }
@@ -173,31 +156,24 @@ export async function resolveKeepCloudVersion(
     cloudNote.updatedAt,
     cloudNote.isPinned,
     cloudNote.isFavorite,
-    cloudNote.color
+    cloudNote.color,
   );
 }
-
-
 
 /*
 |--------------------------------------------------------------------------
 | SYNC ONE NOTE
 |--------------------------------------------------------------------------
-*/ 
+*/
 
-
-export async function syncNote(
-  noteId: string
-  ): Promise<boolean> {
+export async function syncNote(noteId: string): Promise<boolean> {
   const user = auth.currentUser;
 
   if (!user || !(await isOnline())) {
     return false;
   }
 
-  const note = getPendingNotes(user.uid).find(
-    (item) => item.id === noteId
-  );
+  const note = getPendingNotes(user.uid).find((item) => item.id === noteId);
 
   if (!note) {
     return false;
@@ -208,8 +184,7 @@ export async function syncNote(
   const syncedContent = getLocalSyncedContent(note.id);
 
   const createdAt = note.createdAt ?? new Date();
-  const updatedAt =
-    note.updatedAt ?? note.createdAt ?? new Date();
+  const updatedAt = note.updatedAt ?? note.createdAt ?? new Date();
 
   try {
     const result = await runTransaction(db, async (transaction) => {
@@ -247,8 +222,7 @@ export async function syncNote(
 
       const cloudTimestamp = cloudNote.updatedAt;
       const cloudUpdatedAt =
-        cloudTimestamp &&
-        typeof cloudTimestamp.toDate === "function"
+        cloudTimestamp && typeof cloudTimestamp.toDate === "function"
           ? cloudTimestamp.toDate().toISOString()
           : null;
 
@@ -278,11 +252,27 @@ export async function syncNote(
         return { status: "conflict" as const };
       }
 
+      console.log("Conflict diagnostic:", {
+        cloudTitle: cloudNote.title,
+        baselineTitle: syncedContent?.title,
+        cloudContent: cloudNote.content,
+        baselineContent: syncedContent?.content,
+        cloudUpdatedAt,
+        cloudBaseline,
+        cloudMatchesBaseline,
+        timestampsMatch: cloudUpdatedAt === cloudBaseline,
+      });
       // The cloud differs from the last confirmed synced version.
       if (
         !cloudMatchesBaseline ||
         cloudUpdatedAt !== cloudBaseline
       ) {
+        console.warn("Conflict reason:", {
+          contentChangedInCloud: !cloudMatchesBaseline,
+          timestampChangedInCloud:
+            cloudUpdatedAt !== cloudBaseline,
+        });
+
         return { status: "conflict" as const };
       }
 
@@ -309,29 +299,31 @@ export async function syncNote(
       markLocalNoteAsConflict(note.id);
       debugNoteSyncState(note.id);
 
-      console.warn(
-        "Note conflict detected; local edit preserved:",
-        note.id
-      );
+      console.warn("Note conflict detected; local edit preserved:", note.id);
 
       return false;
     }
 
     markLocalNoteAsSynced(
       note.id,
+      user.uid,
       result.cloudUpdatedAt,
       note.title,
-      note.content
+      note.content,
     );
 
     console.log("Note synced:", note.id);
     return true;
-  } catch (error) {
-    console.error("Failed to sync note:", note.id, error);
+  } catch (error: any) {
+    console.error("Failed to sync note:", note.id, {
+      code: error?.code,
+      message: error?.message,
+      name: error?.name,
+    });
+
     return false;
   }
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -347,30 +339,20 @@ export async function syncPendingNotes() {
   }
 
   if (!(await isOnline())) {
-    console.log(
-      "Pending note sync skipped: offline"
-    );
+    console.log("Pending note sync skipped: offline");
 
     return;
   }
 
-  const pendingNotes =
-    getPendingNotes(user.uid);
+  const pendingNotes = getPendingNotes(user.uid);
 
-  console.log(
-    "Pending notes:",
-    pendingNotes.length
-  );
+  console.log("Pending notes:", pendingNotes.length);
 
   for (const note of pendingNotes) {
     try {
       await syncNote(note.id);
     } catch (error) {
-      console.error(
-        "Failed to sync note:",
-        note.id,
-        error
-      );
+      console.error("Failed to sync note:", note.id, error);
 
       /*
       |--------------------------------------------------------------------
@@ -400,28 +382,18 @@ export async function syncPendingDeletions() {
   }
 
   if (!(await isOnline())) {
-    console.log(
-      "Pending deletion sync skipped: offline"
-    );
+    console.log("Pending deletion sync skipped: offline");
 
     return;
   }
 
-  const pendingDeletions =
-    getPendingDeletions(user.uid);
+  const pendingDeletions = getPendingDeletions(user.uid);
 
-  console.log(
-    "Pending deletions:",
-    pendingDeletions.length
-  );
+  console.log("Pending deletions:", pendingDeletions.length);
 
   for (const noteId of pendingDeletions) {
     try {
-      const noteRef = doc(
-        db,
-        "notes",
-        noteId
-      );
+      const noteRef = doc(db, "notes", noteId);
 
       await deleteDoc(noteRef);
 
@@ -431,21 +403,11 @@ export async function syncPendingDeletions() {
       |--------------------------------------------------------------------------
       */
 
-      permanentlyDeleteLocalNote(
-        noteId
-      );
+      permanentlyDeleteLocalNote(noteId, user.uid);
 
-      console.log(
-        "Deletion synced:",
-        noteId
-      );
-
+      console.log("Deletion synced:", noteId);
     } catch (error) {
-      console.error(
-        "Failed to sync deletion:",
-        noteId,
-        error
-      );
+      console.error("Failed to sync deletion:", noteId, error);
 
       /*
       |--------------------------------------------------------------------------
@@ -464,17 +426,13 @@ export async function syncPendingDeletions() {
 
 export async function syncNotes() {
   if (isSyncing) {
-    console.log(
-      "Sync already in progress"
-    );
+    console.log("Sync already in progress");
 
     return;
   }
 
   if (!(await isOnline())) {
-    console.log(
-      "Full sync skipped: offline"
-    );
+    console.log("Full sync skipped: offline");
 
     return;
   }
@@ -482,24 +440,15 @@ export async function syncNotes() {
   try {
     isSyncing = true;
 
-    console.log(
-      "Starting note synchronization..."
-    );
+    console.log("Starting note synchronization...");
 
     await syncPendingNotes();
 
     await syncPendingDeletions();
 
-    console.log(
-      "Note synchronization complete"
-    );
-
+    console.log("Note synchronization complete");
   } catch (error) {
-    console.error(
-      "Note synchronization failed:",
-      error
-    );
-
+    console.error("Note synchronization failed:", error);
   } finally {
     isSyncing = false;
   }

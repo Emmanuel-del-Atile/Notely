@@ -1,3 +1,4 @@
+
 import {
   View,
   Text,
@@ -6,6 +7,7 @@ import {
   ScrollView,
   SafeAreaView,
   Alert,
+  AccessibilityInfo,
 } from "react-native";
 
 import { useFocusEffect } from "@react-navigation/native";
@@ -25,116 +27,100 @@ import {
 import NoteActionMenu from "./components/NoteActionMenu";
 import NoteColorPicker from "./components/NoteColorPicker";
 
-import {
-  colors,
-  typography,
-  spacing,
-} from "./theme";
-
-const noteColors = {
-  default: colors.surface,
-  yellow: "#FFF3A3",
-  blue: "#BDE0FE",
-  green: "#C7F9CC",
-  pink: "#FFC8DD",
-};
+import { typography, spacing } from "./theme";
+import { useTheme } from "./theme/ThemeContext";
+import type { ThemeColors } from "./theme/colors";
 
 export default function Favorites({ navigation }: any) {
+  const { colors } = useTheme();
+  const styles = makeStyles(colors);
+
+  const noteColors: Record<string, string> = {
+    default: colors.surface,
+    yellow: "#FFF3A3",
+    blue: "#BDE0FE",
+    green: "#C7F9CC",
+    pink: "#FFC8DD",
+  };
+
   const [notes, setNotes] = useState<Note[]>([]);
-  const [selectedNote, setSelectedNote] =
-    useState<Note | null>(null);
-
-  const [colorPickerVisible, setColorPickerVisible] =
-    useState(false);
-
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
-      loadFavorites();
+      let active = true;
+
+      async function loadFavorites() {
+        try {
+          setLoading(true);
+
+          const data = await getMyNotes();
+
+          if (active) {
+            setNotes(data.filter((note) => note.isFavorite));
+          }
+        } catch (error) {
+          console.error("Failed to load favorites:", error);
+
+          if (active) {
+            Alert.alert("Error", "Failed to load favorites.");
+          }
+        } finally {
+          if (active) {
+            setLoading(false);
+          }
+        }
+      }
+
+      void loadFavorites();
+
+      return () => {
+        active = false;
+      };
     }, [])
   );
 
-  async function loadFavorites() {
-    try {
-      setLoading(true);
-
-      const data = await getMyNotes();
-
-      setNotes(
-        data.filter((note) => note.isFavorite)
-      );
-    } catch (error) {
-      console.error(
-        "Failed to load favorites:",
-        error
-      );
-
-      Alert.alert(
-        "Error",
-        "Failed to load favorites."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleToggleFavorite(note: Note) {
     try {
-      await toggleFavorite(
-        note.id,
-        note.isFavorite
-      );
+      await toggleFavorite(note.id, note.isFavorite);
 
       setNotes((currentNotes) =>
-        currentNotes.filter(
-          (item) => item.id !== note.id
-        )
+        currentNotes.filter((item) => item.id !== note.id)
       );
 
       setSelectedNote(null);
-    } catch (error) {
-      console.error(
-        "Failed to remove favorite:",
-        error
-      );
 
-      Alert.alert(
-        "Error",
-        "Failed to update favorite."
+      AccessibilityInfo.announceForAccessibility(
+        "Removed from favorites."
       );
+    } catch (error) {
+      console.error("Failed to remove favorite:", error);
+      Alert.alert("Error", "Failed to update favorite.");
     }
   }
 
   async function handleTogglePin(note: Note) {
     try {
-      await togglePin(
-        note.id,
-        note.isPinned
-      );
+      await togglePin(note.id, note.isPinned);
 
       setNotes((currentNotes) =>
         currentNotes.map((item) =>
           item.id === note.id
-            ? {
-                ...item,
-                isPinned: !item.isPinned,
-              }
+            ? { ...item, isPinned: !item.isPinned }
             : item
         )
       );
 
       setSelectedNote(null);
-    } catch (error) {
-      console.error(
-        "Failed to toggle pin:",
-        error
-      );
 
-      Alert.alert(
-        "Error",
-        "Failed to update note."
+      AccessibilityInfo.announceForAccessibility(
+        note.isPinned ? "Note unpinned." : "Note pinned."
       );
+    } catch (error) {
+      console.error("Failed to toggle pin:", error);
+      Alert.alert("Error", "Failed to update note.");
     }
   }
 
@@ -142,7 +128,7 @@ export default function Favorites({ navigation }: any) {
     setSelectedNote(null);
 
     navigation.navigate("NoteEditor", {
-      note,
+      noteId: note.id,
     });
   }
 
@@ -150,40 +136,29 @@ export default function Favorites({ navigation }: any) {
     setColorPickerVisible(true);
   }
 
-  async function handleSelectColor(
-    color: Note["color"]
-  ) {
+  async function handleSelectColor(color: Note["color"]) {
     if (!selectedNote) return;
 
     try {
-      await updateNoteColor(
-        selectedNote.id,
-        color
-      );
+      await updateNoteColor(selectedNote.id, color);
 
       setNotes((currentNotes) =>
         currentNotes.map((item) =>
           item.id === selectedNote.id
-            ? {
-                ...item,
-                color,
-              }
+            ? { ...item, color }
             : item
         )
       );
 
       setSelectedNote(null);
       setColorPickerVisible(false);
-    } catch (error) {
-      console.error(
-        "Failed to change color:",
-        error
-      );
 
-      Alert.alert(
-        "Error",
-        "Failed to change note color."
+      AccessibilityInfo.announceForAccessibility(
+        "Note color updated."
       );
+    } catch (error) {
+      console.error("Failed to change color:", error);
+      Alert.alert("Error", "Failed to change note color.");
     }
   }
 
@@ -203,34 +178,23 @@ export default function Favorites({ navigation }: any) {
           style: "destructive",
           onPress: async () => {
             try {
-              const success =
-                await deleteNote(note.id);
+              const success = await deleteNote(note.id);
 
               if (!success) {
-                Alert.alert(
-                  "Error",
-                  "Failed to delete note."
-                );
-
+                Alert.alert("Error", "Failed to delete note.");
                 return;
               }
 
               setNotes((currentNotes) =>
-                currentNotes.filter(
-                  (item) =>
-                    item.id !== note.id
-                )
-              );
-            } catch (error) {
-              console.error(
-                "Failed to delete note:",
-                error
+                currentNotes.filter((item) => item.id !== note.id)
               );
 
-              Alert.alert(
-                "Error",
-                "Failed to delete note."
+              AccessibilityInfo.announceForAccessibility(
+                "Note deleted."
               );
+            } catch (error) {
+              console.error("Failed to delete note:", error);
+              Alert.alert("Error", "Failed to delete note.");
             }
           },
         },
@@ -238,27 +202,26 @@ export default function Favorites({ navigation }: any) {
     );
   }
 
-  const sortedNotes = [...notes].sort(
-    (a, b) => {
-      if (a.isPinned !== b.isPinned) {
-        return a.isPinned ? -1 : 1;
-      }
-
-      const dateA =
-        a.createdAt?.getTime() ?? 0;
-
-      const dateB =
-        b.createdAt?.getTime() ?? 0;
-
-      return dateB - dateA;
+  const sortedNotes = [...notes].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) {
+      return a.isPinned ? -1 : 1;
     }
-  );
+
+    const dateA = a.updatedAt?.getTime() ?? a.createdAt?.getTime() ?? 0;
+    const dateB = b.updatedAt?.getTime() ?? b.createdAt?.getTime() ?? 0;
+
+    return dateB - dateA;
+  });
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <Text style={styles.statusText}>
+          <Text
+            style={styles.statusText}
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading favorite notes"
+          >
             Loading favorites...
           </Text>
         </View>
@@ -268,11 +231,10 @@ export default function Favorites({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>
+          <Text style={styles.title} accessibilityRole="header">
             Favorites
           </Text>
 
@@ -285,14 +247,13 @@ export default function Favorites({ navigation }: any) {
           name="star"
           size={28}
           color={colors.primary}
+          accessible={false}
         />
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={
-          styles.notesContainer
-        }
+        contentContainerStyle={styles.notesContainer}
       >
         {sortedNotes.length === 0 ? (
           <View style={styles.emptyState}>
@@ -300,77 +261,118 @@ export default function Favorites({ navigation }: any) {
               name="star-outline"
               size={64}
               color={colors.mutedText}
+              accessible={false}
             />
 
-            <Text style={styles.emptyTitle}>
+            <Text
+              style={styles.emptyTitle}
+              accessibilityRole="header"
+            >
               No favorites yet
             </Text>
 
             <Text style={styles.emptyMessage}>
-              Long press a note and choose
-              Favorite to save it here.
+              Long press a note and choose Favorite to save it here.
             </Text>
           </View>
         ) : (
-          sortedNotes.map((note) => (
-            <View
-              key={note.id}
-              style={[
-                styles.noteCard,
-                {
-                  backgroundColor:
-                    noteColors[note.color],
-                },
-              ]}
-            >
-              <Pressable
-                onPress={() =>
-                  navigation.navigate(
-                    "NoteDetails",
-                    { noteId : note.id }
-                  )
-                }
-                onLongPress={() =>
-                  setSelectedNote(note)
-                }
-                delayLongPress={400}
+          sortedNotes.map((note) => {
+            const isDefaultColor =
+              !note.color || note.color === "default";
+
+            return (
+              <View
+                key={note.id}
+                style={[
+                  styles.noteCard,
+                  {
+                    backgroundColor:
+                      noteColors[note.color] ?? colors.surface,
+                  },
+                ]}
               >
-                <View style={styles.noteTop}>
-                  <View style={styles.noteDot} />
-
-                  <Text
-                    style={styles.noteTitle}
-                    numberOfLines={1}
-                  >
-                    {note.title}
-                  </Text>
-
-                  {note.isPinned && (
-                    <Ionicons
-                      name="pin"
-                      size={18}
-                      color={colors.primary}
-                      style={styles.pinIcon}
-                    />
-                  )}
-
-                  <Ionicons
-                    name="star"
-                    size={18}
-                    color={colors.primary}
-                    style={styles.favoriteIcon}
-                  />
-                </View>
-
-                <Text
-                  style={styles.notePreview}
-                  numberOfLines={2}
+                <Pressable
+                  onPress={() =>
+                    navigation.navigate("NoteDetails", {
+                      noteId: note.id,
+                    })
+                  }
+                  onLongPress={() => setSelectedNote(note)}
+                  delayLongPress={400}
+                  accessibilityRole="button"
+                  accessibilityLabel={[
+                    note.title || "Untitled note",
+                    note.content || "No preview text",
+                    note.isPinned ? "Pinned" : "",
+                    "Favorite",
+                  ].filter(Boolean).join(". ")}
+                  accessibilityHint="Double tap to open the note. Long press for note actions."
                 >
-                  {note.content}
-                </Text>
-              </Pressable>
-            </View>
-          ))
+                  <View style={styles.noteTop}>
+                    <View
+                      style={[
+                        styles.noteDot,
+                        {
+                          backgroundColor: isDefaultColor
+                            ? colors.primary
+                            : "#334155",
+                        },
+                      ]}
+                      accessible={false}
+                    />
+
+                    <Text
+                      style={[
+                        styles.noteTitle,
+                        {
+                          color: isDefaultColor
+                            ? colors.text
+                            : "#202020",
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {note.title || "Untitled note"}
+                    </Text>
+
+                    {note.isPinned && (
+                      <Ionicons
+                        name="pin"
+                        size={18}
+                        color={isDefaultColor ? colors.primary : "#334155"}
+                        style={styles.pinIcon}
+                        accessible={false}
+                      />
+                    )}
+
+                    <Ionicons
+                      name="star"
+                      size={18}
+                      color={isDefaultColor ? colors.primary : "#334155"}
+                      style={styles.favoriteIcon}
+                      accessible={false}
+                    />
+                  </View>
+
+                  {note.content.trim() !== "" && (
+                    <Text
+                      style={[
+                        styles.notePreview,
+                        {
+                          color: isDefaultColor
+                            ? colors.secondaryText
+                            : "#565656",
+                        },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {note.content}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            );
+          })
         )}
       </ScrollView>
 
@@ -378,22 +380,12 @@ export default function Favorites({ navigation }: any) {
       {selectedNote && !colorPickerVisible && (
         <NoteActionMenu
           note={selectedNote}
-          onPin={() =>
-            handleTogglePin(selectedNote)
-          }
-          onFavorite={() =>
-            handleToggleFavorite(selectedNote)
-          }
+          onPin={() => handleTogglePin(selectedNote)}
+          onFavorite={() => handleToggleFavorite(selectedNote)}
           onColor={handleChangeColor}
-          onEdit={() =>
-            handleEdit(selectedNote)
-          }
-          onDelete={() =>
-            handleDelete(selectedNote)
-          }
-          onClose={() =>
-            setSelectedNote(null)
-          }
+          onEdit={() => handleEdit(selectedNote)}
+          onDelete={() => handleDelete(selectedNote)}
+          onClose={() => setSelectedNote(null)}
         />
       )}
 
@@ -408,118 +400,118 @@ export default function Favorites({ navigation }: any) {
           }}
         />
       )}
-
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
+    header: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.surface,
+    },
 
-  title: {
-    fontSize: typography.title,
-    fontWeight: typography.bold,
-    color: colors.text,
-  },
+    title: {
+      fontSize: typography.title,
+      fontWeight: typography.bold,
+      color: colors.text,
+    },
 
-  subtitle: {
-    marginTop: spacing.xs,
-    fontSize: typography.bodySmall,
-    color: colors.secondaryText,
-  },
+    subtitle: {
+      marginTop: spacing.xs,
+      fontSize: typography.bodySmall,
+      color: colors.secondaryText,
+    },
 
-  notesContainer: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
+    notesContainer: {
+      padding: spacing.lg,
+      paddingBottom: spacing.xxl,
+      flexGrow: 1,
+    },
 
-  noteCard: {
-    borderRadius: 18,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
+    noteCard: {
+      borderRadius: 18,
+      padding: spacing.lg,
+      marginBottom: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
 
-  noteTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
+    noteTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.sm,
+    },
 
-  noteDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-    marginRight: spacing.sm,
-  },
+    noteDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 8,
+      marginRight: spacing.sm,
+    },
 
-  noteTitle: {
-    flex: 1,
-    fontSize: typography.subheading,
-    fontWeight: typography.semibold,
-    color: colors.text,
-  },
+    noteTitle: {
+      flex: 1,
+      fontSize: typography.subheading,
+      fontWeight: typography.semibold,
+    },
 
-  pinIcon: {
-    marginLeft: spacing.sm,
-  },
+    pinIcon: {
+      marginLeft: spacing.sm,
+    },
 
-  favoriteIcon: {
-    marginLeft: spacing.sm,
-  },
+    favoriteIcon: {
+      marginLeft: spacing.sm,
+    },
 
-  notePreview: {
-    fontSize: typography.bodySmall,
-    lineHeight: 20,
-    color: colors.secondaryText,
-  },
+    notePreview: {
+      fontSize: typography.bodySmall,
+      lineHeight: 20,
+    },
 
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    center: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
 
-  statusText: {
-    fontSize: typography.body,
-    color: colors.text,
-  },
+    statusText: {
+      fontSize: typography.body,
+      color: colors.text,
+    },
 
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 100,
-    paddingHorizontal: spacing.xxl,
-  },
+    emptyState: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 100,
+      paddingHorizontal: spacing.xxl,
+    },
 
-  emptyTitle: {
-    marginTop: spacing.lg,
-    fontSize: typography.heading,
-    fontWeight: typography.bold,
-    color: colors.text,
-  },
+    emptyTitle: {
+      marginTop: spacing.lg,
+      fontSize: typography.heading,
+      fontWeight: typography.bold,
+      color: colors.text,
+    },
 
-  emptyMessage: {
-    marginTop: spacing.sm,
-    fontSize: typography.bodySmall,
-    lineHeight: 21,
-    color: colors.secondaryText,
-    textAlign: "center",
-  },
-});
+    emptyMessage: {
+      marginTop: spacing.sm,
+      fontSize: typography.bodySmall,
+      lineHeight: 21,
+      color: colors.secondaryText,
+      textAlign: "center",
+    },
+  });
+}

@@ -1,9 +1,13 @@
 import { 
+  GoogleAuthProvider,
   createUserWithEmailAndPassword, 
   signOut, 
   signInWithEmailAndPassword ,
   sendPasswordResetEmail
 } from "firebase/auth";
+import {
+  GoogleSignin,
+} from "@react-native-google-signin/google-signin";
 import { auth } from "./firebase";
 
 

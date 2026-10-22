@@ -291,14 +291,17 @@ export function markLocalNoteForDeletion(
 */
 
 export function permanentlyDeleteLocalNote(
-  noteId: string
+  noteId: string,
+  ownerId: string
 ): boolean {
   const result = db.runSync(
     `
       DELETE FROM notes
-      WHERE id = ?;
+      WHERE id = ?
+        AND owner_id = ?;
     `,
-    noteId
+    noteId,
+    ownerId
   );
 
   return result.changes > 0;
@@ -388,10 +391,11 @@ export function updateLocalColor(
 
 export function markLocalNoteAsSynced(
   noteId: string,
+  ownerId: string,
   cloudUpdatedAt: string,
   syncedTitle: string,
   syncedContent: string
-  ): boolean {
+): boolean {
   const result = db.runSync(
     `
       UPDATE notes
@@ -400,12 +404,14 @@ export function markLocalNoteAsSynced(
         cloud_updated_at = ?,
         synced_title = ?,
         synced_content = ?
-      WHERE id = ?;
+      WHERE id = ?
+        AND owner_id = ?;
     `,
     cloudUpdatedAt,
     syncedTitle,
     syncedContent,
-    noteId
+    noteId,
+    ownerId
   );
 
   return result.changes > 0;
